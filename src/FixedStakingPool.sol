@@ -253,11 +253,16 @@ contract FixedStakingPool is Ownable, ReentrancyGuard, IFixedStakingPool {
             return 0;
         }
 
-        uint256 effectiveTime = (
+        // Determine the cap time for reward calculation
+        uint256 capTime = (
             block.timestamp < interestStartTime + lockinPeriod
                 ? block.timestamp
                 : interestStartTime + lockinPeriod
-        ) - userStake.lastUpdatedTime;
+        );
+
+        capTime = poolEndTime < capTime ? poolEndTime : capTime; // Respect poolEndTime
+
+        uint256 effectiveTime = capTime - userStake.lastUpdatedTime;
 
         return (userStake.amount * fixedAPR * effectiveTime) / (365 days * 100);
     }
