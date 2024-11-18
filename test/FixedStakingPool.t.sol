@@ -247,50 +247,9 @@ contract FixedStakingPoolTest is Test {
                 user1
             )
         );
-
         pool.emergencyWithdraw();
         vm.stopPrank();
     }
-
-    // ============ Edge Case Tests ============
-
-    // function testClaimRewardAfterPoolEnds() public {
-    //     uint256 stakingAmount = 10_000 ether;
-
-    //     vm.startPrank(user1);
-    //     stakingToken.approve(address(pool), stakingAmount);
-    //     pool.stake(stakingAmount);
-    //     vm.stopPrank();
-
-    //     // Move to pool end time
-    //     vm.warp(pool.poolEndTime());
-
-    //     vm.startPrank(user1);
-    //     pool.claimReward();
-    //     vm.stopPrank();
-
-    //     // Reflect contract logic for reward calculation
-    //     uint256 apr = 10; // 10% APR
-    //     uint256 interestStart = pool.interestStartTime();
-    //     uint256 lastUpdated = pool.interestStartTime(); // When user staked
-    //     uint256 lockinEnd = interestStart + pool.lockinPeriod();
-    //     uint256 effectiveEndTime = pool.poolEndTime() < lockinEnd
-    //         ? pool.poolEndTime()
-    //         : lockinEnd;
-    //     uint256 durationInSeconds = effectiveEndTime - lastUpdated;
-
-    //     uint256 reward = (stakingAmount * apr * durationInSeconds) /
-    //         (365 * 86400 * 100);
-
-    //     console.log("Interest Start:", interestStart);
-    //     console.log("Lock-In End:", lockinEnd);
-    //     console.log("Effective End Time:", effectiveEndTime);
-    //     console.log("Duration in Seconds:", durationInSeconds);
-    //     console.log("Reward Calculated:", reward);
-    //     console.log("Reward from Contract:", rewardToken.balanceOf(user1));
-
-    //     assertEq(rewardToken.balanceOf(user1), reward);
-    // }
 
     function testRewardCalculationPrecision() public {
         vm.startPrank(user1);
