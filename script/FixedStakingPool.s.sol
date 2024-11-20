@@ -1,48 +1,45 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
 
-import {Script, console} from "forge-std/Script.sol";
-import {FixedStakingPool} from "../src/FixedStakingPool.sol";
-import {MockERC20} from "../src/MockERC20.sol";
+import "forge-std/Script.sol";
+import "../src/FixedStakingPool.sol";
+import "../src/MockERC20.sol";
 
-contract FixedStakingPoolScript is Script {
-    FixedStakingPool public pool;
-    MockERC20 public stakingToken;
-    MockERC20 public rewardToken;
-
-    // Deployment configuration
-    uint256 public constant FIXED_APR = 10; // 10% APR
-    uint256 public INTEREST_START_TIME = block.timestamp + 1 days; // Start in 1 day
-    uint256 public POOL_END_TIME = block.timestamp + 30 days; // End in 30 days
-    uint256 public constant LOCKIN_PERIOD = 7 days; // 7 days lock-in
-    uint256 public constant MAX_POOL_SIZE = 500_000 ether; // 500,000 tokens max staking pool size
-
-    function setUp() public {}
-
-    function run() public {
+/**
+ * @title DeployFixedStakingPool
+ * @notice Script to deploy the FixedStakingPool contract along with mock staking and reward tokens.
+ */
+contract DeployFixedStakingPool is Script {
+    function run() external {
+        // Start broadcasting transactions
         vm.startBroadcast();
 
-        // Deploy mock tokens
-        stakingToken = new MockERC20("StakingToken", "STK");
-        rewardToken = new MockERC20("RewardToken", "RWD");
+        // Deploy Mock Tokens
+        MockERC20 stakingToken = new MockERC20("StakingToken", "STK");
+        MockERC20 rewardToken = new MockERC20("RewardToken", "RWD");
 
-        console.log("Deployed Staking Token (STK) at:", address(stakingToken));
-        console.log("Deployed Reward Token (RWD) at:", address(rewardToken));
+        // Initialize FixedStakingPool parameters
+        uint256 fixedAPR = 10; // 10% APR
+        uint256 interestStartTime = block.timestamp + 1 days; // Interest starts tomorrow
+        uint256 poolEndTime = interestStartTime + 30 days; // Pool ends in 30 days
+        uint256 maxPoolSize = 1_000_000 ether; // Maximum staking pool size
 
-        // Deploy the staking pool contract
-        pool = new FixedStakingPool(
-            address(stakingToken),
-            address(rewardToken),
-            FIXED_APR,
-            INTEREST_START_TIME,
-            POOL_END_TIME,
-            LOCKIN_PERIOD,
-            MAX_POOL_SIZE,
-            msg.sender // Owner of the contract
+        // Deploy FixedStakingPool
+        FixedStakingPool pool = new FixedStakingPool(
+            IERC20(stakingToken),
+            IERC20(rewardToken),
+            fixedAPR,
+            interestStartTime,
+            poolEndTime,
+            maxPoolSize
         );
 
-        console.log("Deployed FixedStakingPool at:", address(pool));
+        // Log deployed contract addresses
+        console.log("FixedStakingPool deployed at:", address(pool));
+        console.log("Staking Token deployed at:", address(stakingToken));
+        console.log("Reward Token deployed at:", address(rewardToken));
 
+        // Stop broadcasting transactions
         vm.stopBroadcast();
     }
 }

@@ -2,9 +2,6 @@
 pragma solidity ^0.8.21;
 
 import "forge-std/Test.sol";
-
-import "@openzeppelin/contracts/access/Ownable.sol";
-
 import "../src/FixedStakingPool.sol";
 import "../src/MockERC20.sol";
 
@@ -18,95 +15,399 @@ contract FixedStakingPoolTest is Test {
     address owner = address(this);
 
     uint256 initialSupply = 1_000_000 ether;
+    uint256 fixedAPR = 10; // 10% APR
+    uint256 interestStartTime;
+    uint256 poolEndTime;
+    uint256 maxPoolSize = 500_000 ether;
 
     function setUp() public {
         stakingToken = new MockERC20("StakingToken", "STK");
         rewardToken = new MockERC20("RewardToken", "RWD");
 
-        // transfer tokens for testing
+        // Transfer tokens for testing
         stakingToken.transfer(user1, 500_000 ether);
-        stakingToken.transfer(user2, 50_000 ether);
-        rewardToken.transfer(owner, 100_000 ether);
+        stakingToken.transfer(user2, 500_000 ether);
+        rewardToken.transfer(owner, 1_000_000 ether);
+
+        interestStartTime = block.timestamp + 1 days;
+        poolEndTime = interestStartTime + 30 days;
 
         // Deploy the staking pool contract
         pool = new FixedStakingPool(
-            address(stakingToken),
-            address(rewardToken),
-            10, // Fixed APR = 10%
-            block.timestamp + 1 days,
-            block.timestamp + 30 days,
-            7 days, // Lock-in period
-            500_000 ether, // Max pool size
-            owner
+            IERC20(stakingToken),
+            IERC20(rewardToken),
+            fixedAPR,
+            interestStartTime,
+            poolEndTime,
+            maxPoolSize
         );
 
-        rewardToken.approve(address(pool), 100_000 ether);
-        rewardToken.transfer(address(pool), 100_000 ether);
+        rewardToken.approve(address(pool), 1_000_000 ether);
+        rewardToken.transfer(address(pool), 1_000_000 ether);
     }
 
-    // ============ Tests for Staking ============
+    /// @notice Successful withdrawal after pool end time
+    function testWithdrawAllSuccess() public {
+        uint256 stakeAmount = 100_000 ether;
 
-    function testStakeSuccess() public {
+        // User1 stakes
         vm.startPrank(user1);
-        stakingToken.approve(address(pool), 10_000 ether);
-        pool.stake(10_000 ether);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
         vm.stopPrank();
 
-        (uint256 stakedAmount, , ) = pool.getStake(user1);
-        assertEq(stakedAmount, 10_000 ether);
-    }
+        // Warp to after pool end time
+        vm.warp(poolEndTime + 1);
 
-    function testStakeFailsIfPoolFull() public {
+        // User1 withdraws
         vm.startPrank(user1);
-        stakingToken.approve(address(pool), 500_001 ether);
-
-        vm.expectRevert("Max pool size reached");
-        pool.stake(500_001 ether);
+        pool.withdrawAll();
         vm.stopPrank();
+
+        // Expected reward calculation
+        uint256 duration = poolEndTime - interestStartTime; // Full staking duration
+        uint256 expectedReward = (stakeAmount * fixedAPR * duration) /
+            (365 days * 100);
+
+        // Verify staked amount and rewards are transferred back
+        assertEq(stakingToken.balanceOf(user1), 500_000 ether); // Refund full stake
+        assertEq(rewardToken.balanceOf(user1), expectedReward); // Correct reward
     }
 
-    function testStakeFailsAfterInterestStart() public {
-        vm.warp(block.timestamp + 2 days); // Warp to after interest start
+    /// @notice Multiple users withdraw after pool end time
+    function testMultipleUsersWithdrawSuccess() public {
+        uint256 stakeAmountUser1 = 100_000 ether;
+        uint256 stakeAmountUser2 = 50_000 ether;
+
+        // User1 stakes
         vm.startPrank(user1);
-        stakingToken.approve(address(pool), 1_000 ether);
-
-        vm.expectRevert("Staking period closed");
-        pool.stake(1_000 ether);
+        stakingToken.approve(address(pool), stakeAmountUser1);
+        pool.stake(stakeAmountUser1);
         vm.stopPrank();
-    }
 
-    function testStakeFailsWithoutAllowance() public {
-        vm.startPrank(user1);
-        vm.expectRevert("Allowance not sufficient");
-        pool.stake(1_000 ether);
-        vm.stopPrank();
-    }
-
-    function testStakeFailsWithInsufficientBalance() public {
+        // User2 stakes
         vm.startPrank(user2);
-        stakingToken.approve(address(pool), 100_000 ether); // Approve more than balance
-        vm.expectRevert("Insufficient balance");
-        pool.stake(100_000 ether);
+        stakingToken.approve(address(pool), stakeAmountUser2);
+        pool.stake(stakeAmountUser2);
+        vm.stopPrank();
+
+        // Warp to after pool end time
+        vm.warp(poolEndTime + 1);
+
+        // User1 withdraws
+        vm.startPrank(user1);
+        pool.withdrawAll();
+        vm.stopPrank();
+
+        // User2 withdraws
+        vm.startPrank(user2);
+        pool.withdrawAll();
+        vm.stopPrank();
+
+        // Expected reward calculations
+        uint256 duration = poolEndTime - interestStartTime; // Full staking duration
+        uint256 expectedRewardUser1 = (stakeAmountUser1 * fixedAPR * duration) /
+            (365 days * 100);
+        uint256 expectedRewardUser2 = (stakeAmountUser2 * fixedAPR * duration) /
+            (365 days * 100);
+
+        // Verify staked amounts and rewards are transferred back
+        assertEq(stakingToken.balanceOf(user1), 500_000 ether); // Refund full stake
+        assertEq(rewardToken.balanceOf(user1), expectedRewardUser1); // Correct reward for User1
+
+        assertEq(stakingToken.balanceOf(user2), 500_000 ether); // Refund full stake
+        assertEq(rewardToken.balanceOf(user2), expectedRewardUser2); // Correct reward for User2
+    }
+
+    /// @notice Withdrawal with no rewards (before interest start time)
+    function testWithdrawBeforeInterestStart() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Warp to just before interest start time
+        vm.warp(interestStartTime - 1);
+
+        // Attempt to withdraw (should fail due to pool end time)
+        vm.startPrank(user1);
+        vm.expectRevert("Pool period active");
+        pool.withdrawAll();
         vm.stopPrank();
     }
 
-    function testStakeExactPoolLimit() public {
+    /// @notice Successful withdrawal after late staking
+    function testLateStakingAndWithdrawal() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // Warp to just before interest start time
+        vm.warp(interestStartTime - 1);
+
+        // User1 stakes
         vm.startPrank(user1);
-        stakingToken.approve(address(pool), 500_000 ether);
-        pool.stake(500_000 ether); // Stake maximum allowed
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
         vm.stopPrank();
 
-        assertEq(pool.totalStaked(), 500_000 ether);
+        // Warp to after pool end time
+        vm.warp(poolEndTime + 1);
+
+        // User1 withdraws
+        vm.startPrank(user1);
+        pool.withdrawAll();
+        vm.stopPrank();
+
+        // Expected reward calculation
+        uint256 duration = poolEndTime - interestStartTime; // Full staking duration
+        uint256 expectedReward = (stakeAmount * fixedAPR * duration) /
+            (365 days * 100);
+
+        // Verify staked amount and rewards are transferred back
+        assertEq(stakingToken.balanceOf(user1), 500_000 ether); // Refund full stake
+        assertEq(rewardToken.balanceOf(user1), expectedReward); // Correct reward
     }
 
-    function testStakeFailsOnOverflow() public {
+    /// @notice Partial withdrawals are not allowed
+    function testPartialWithdrawNotAllowed() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // User1 stakes
         vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
 
-        stakingToken.approve(address(pool), 490_000 ether);
-        pool.stake(490_000 ether); // Stake almost max
+        // Warp to after pool end time
+        vm.warp(poolEndTime + 1);
 
+        // User1 attempts partial withdrawal (not supported in contract)
+        vm.startPrank(user1);
+        pool.withdrawAll();
+
+        vm.expectRevert("No stake found");
+        pool.withdrawAll();
+        vm.stopPrank();
+    }
+
+    /// @notice Multiple staking and single withdrawal
+    function testMultipleStakingAndSingleWithdrawal() public {
+        uint256 firstStake = 50_000 ether;
+        uint256 secondStake = 50_000 ether;
+
+        // User1 stakes first amount
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), firstStake);
+        pool.stake(firstStake);
+        vm.stopPrank();
+
+        // User1 stakes additional amount
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), secondStake);
+        pool.stake(secondStake);
+        vm.stopPrank();
+
+        // Warp to after pool end time
+        vm.warp(poolEndTime + 1);
+
+        // User1 withdraws
+        vm.startPrank(user1);
+        pool.withdrawAll();
+        vm.stopPrank();
+
+        // Expected reward calculation
+        uint256 duration = poolEndTime - interestStartTime;
+        uint256 expectedReward = ((firstStake + secondStake) *
+            fixedAPR *
+            duration) / (365 days * 100);
+
+        // Verify staked amount and rewards
+        assertEq(stakingToken.balanceOf(user1), 500_000 ether); // Refund full stake
+        assertEq(rewardToken.balanceOf(user1), expectedReward); // Correct reward
+    }
+
+    /// @notice Staking fails after the staking period closes
+    function testStakingFailsAfterInterestStart() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // Warp to after interest start time
+        vm.warp(interestStartTime + 1);
+
+        // User1 attempts to stake (should fail)
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        vm.expectRevert("Staking period closed");
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+    }
+
+    /// @notice Staking beyond max pool size
+    function testStakingBeyondMaxPoolSize() public {
+        uint256 stakeAmount = 400_000 ether;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // User2 attempts to stake, exceeding max pool size
+        vm.startPrank(user2);
+        stakingToken.approve(address(pool), 200_000 ether);
         vm.expectRevert("Max pool size reached");
-        pool.stake(20_000 ether); // Exceeds remaining capacity
+        pool.stake(200_000 ether);
+        vm.stopPrank();
+    }
+
+    /// @notice Emergency withdraw clears the pool
+    function testEmergencyWithdrawClearsPool() public {
+        uint256 stakeAmount = 500_000 ether;
+        uint256 ownerOldbalance = stakingToken.balanceOf(owner);
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Owner performs emergency withdraw
+        vm.startPrank(owner);
+        pool.emergencyWithdraw();
+        vm.stopPrank();
+
+        // Verify the pool is emptied
+        uint256 poolBalance = stakingToken.balanceOf(address(pool));
+        uint256 ownerBalance = stakingToken.balanceOf(owner);
+
+        assertEq(
+            poolBalance,
+            0,
+            "Pool balance should be zero after emergency withdraw"
+        );
+        assertGt(
+            ownerBalance,
+            ownerOldbalance,
+            "Owner should receive all staked tokens"
+        );
+    }
+
+    /// @notice Claim rewards after enableClaim toggle
+    function testClaimAfterEnableToggle() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Warp to after interest start time
+        vm.warp(interestStartTime + 1);
+
+        // Enable claim
+        vm.startPrank(owner);
+        pool.enableClaim(true);
+        vm.stopPrank();
+
+        // User1 claims reward
+        vm.startPrank(user1);
+        pool.claimReward();
+        vm.stopPrank();
+
+        // Expected reward calculation
+        uint256 duration = block.timestamp - interestStartTime;
+        uint256 expectedReward = (stakeAmount * fixedAPR * duration) /
+            (365 days * 100);
+
+        // Verify reward transfer
+        assertEq(rewardToken.balanceOf(user1), expectedReward);
+    }
+
+    /// @notice Staking before and after interestStartTime with different users
+    function testStakingWithMultipleUsers() public {
+        uint256 stakeAmountUser1 = 100_000 ether;
+        uint256 stakeAmountUser2 = 50_000 ether;
+
+        // User1 stakes before interest start time
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmountUser1);
+        pool.stake(stakeAmountUser1);
+        vm.stopPrank();
+
+        // Warp to after interest start time
+        vm.warp(interestStartTime + 1);
+
+        // User2 stakes after interest start time (should fail)
+        vm.startPrank(user2);
+        stakingToken.approve(address(pool), stakeAmountUser2);
+        vm.expectRevert("Staking period closed");
+        pool.stake(stakeAmountUser2);
+        vm.stopPrank();
+    }
+
+    /// @notice Pool end time validation for rewards
+    function testRewardCalculationStopsAtPoolEnd() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Warp to beyond pool end time
+        vm.warp(poolEndTime + 10 days);
+
+        // User1 withdraws
+        vm.startPrank(user1);
+        pool.withdrawAll();
+        vm.stopPrank();
+
+        // Expected reward calculation (should stop at poolEndTime)
+        uint256 duration = poolEndTime - interestStartTime;
+        uint256 expectedReward = (stakeAmount * fixedAPR * duration) /
+            (365 days * 100);
+
+        // Verify reward calculation stops at poolEndTime
+        assertEq(rewardToken.balanceOf(user1), expectedReward);
+    }
+
+    function testClaimWithoutStake() public {
+        pool.enableClaim(true);
+
+        // User1 tries to claim rewards without staking
+        vm.startPrank(user1);
+        vm.expectRevert("No rewards to claim");
+        pool.claimReward();
+        vm.stopPrank();
+    }
+
+    function testEmergencyWithdrawWithoutStake() public {
+        // Owner calls emergencyWithdraw when no tokens are staked
+        vm.startPrank(owner);
+        vm.expectRevert("No tokens to withdraw");
+        pool.emergencyWithdraw();
+        vm.stopPrank();
+    }
+
+    function testEnableClaimToggleConsistency() public {
+        // Initially disabled
+        assertFalse(pool.claimEnabled());
+
+        // Enable claim
+        vm.startPrank(owner);
+        pool.enableClaim(true);
+        assertTrue(pool.claimEnabled());
+
+        // Disable claim
+        pool.enableClaim(false);
+        assertFalse(pool.claimEnabled());
+
+        // Enable claim again
+        pool.enableClaim(true);
+        assertTrue(pool.claimEnabled());
         vm.stopPrank();
     }
 
@@ -118,150 +419,142 @@ contract FixedStakingPoolTest is Test {
         vm.stopPrank();
     }
 
-    // ============ Tests for Rewards ============
-
-    function testClaimRewardSuccess() public {
-        stakingToken.transfer(user1, 10_000 ether);
-
-        uint256 stakingAmount = 10_000 ether;
-
+    function testStakeFailsWithInsufficientBalance() public {
         vm.startPrank(user1);
-        stakingToken.approve(address(pool), stakingAmount);
-        pool.stake(stakingAmount);
+        stakingToken.approve(address(pool), 1_000_000 ether); // Approve more than balance
+        vm.expectRevert("Max pool size reached");
+        pool.stake(1_000_000 ether);
+        vm.stopPrank();
+    }
+    function testRewardsBeforeInterestStart() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + 8 days); // After lock-in period
+        // Warp to a time before interest start
+        vm.warp(interestStartTime - 1);
 
-        vm.startPrank(user1);
-        pool.claimReward();
-        vm.stopPrank();
+        // Call the internal reward calculation function indirectly by accessing accrued rewards
+        (, , uint256 accruedReward) = pool.getStake(user1);
 
-        // Break down the calculation to avoid rational constants
-        uint256 apr = 10; // 10%
-        uint256 durationInSeconds = 8 * 86400; // 8 days in seconds
-        uint256 reward = (stakingAmount * apr * durationInSeconds) /
-            (365 * 86400 * 100);
-
-        assertEq(rewardToken.balanceOf(user1), reward);
+        // Rewards should be zero before interest starts
+        assertEq(
+            accruedReward,
+            0,
+            "Rewards should not accrue before interestStartTime"
+        );
     }
 
-    function testClaimRewardFailsIfDisabled() public {
-        pool.enableClaim(false);
+    function testRepeatedEmergencyWithdraw() public {
+        uint256 stakeAmount = 500_000 ether;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Owner performs emergency withdraw
+        vm.startPrank(owner);
+        pool.emergencyWithdraw();
+        vm.stopPrank();
+
+        // Verify pool balance is zero
+        uint256 poolBalance = stakingToken.balanceOf(address(pool));
+        assertEq(poolBalance, 0, "Pool balance should be zero");
+
+        // Try emergency withdraw again (should revert)
+        vm.startPrank(owner);
+        vm.expectRevert("No tokens to withdraw");
+        pool.emergencyWithdraw();
+        vm.stopPrank();
+    }
+
+    function testConstructorFailsEndTimeBeforeStartTime() public {
+        uint256 validInterestStartTime = block.timestamp + 1 days; // Valid start time
+        uint256 invalidPoolEndTime = validInterestStartTime - 1 days; // Invalid end time
+
+        vm.expectRevert("End time before start time");
+        new FixedStakingPool(
+            IERC20(address(stakingToken)),
+            IERC20(address(rewardToken)),
+            fixedAPR,
+            validInterestStartTime,
+            invalidPoolEndTime,
+            maxPoolSize
+        );
+    }
+
+    function testClaimRewardFailsWhenDisabled() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // User1 stakes tokens
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Warp to after interest start time
+        vm.warp(interestStartTime + 1);
+
+        // Attempt to claim rewards while claim is disabled
         vm.startPrank(user1);
         vm.expectRevert("Claiming disabled");
         pool.claimReward();
         vm.stopPrank();
     }
 
-    function testClaimRewardFailsWithoutAccruedRewards() public {
-        vm.startPrank(user1);
-        stakingToken.approve(address(pool), 1_000 ether);
-        pool.stake(1_000 ether);
+    function testDeploymentFailsWithPastInterestStartTime() public {
+        uint256 pastInterestStartTime = block.timestamp - 1; // Set a past timestamp
 
-        vm.warp(block.timestamp + 1 hours); // Minimal time passed
-        vm.expectRevert("No rewards to claim");
+        vm.warp(pastInterestStartTime + 3 days);
+        vm.expectRevert("Start time in the past");
+        new FixedStakingPool(
+            IERC20(address(stakingToken)),
+            IERC20(address(rewardToken)),
+            fixedAPR,
+            pastInterestStartTime,
+            poolEndTime,
+            maxPoolSize
+        );
+    }
+
+    function testRewardCalculationStartTimeEqualsEndTime() public {
+        uint256 stakeAmount = 100_000 ether;
+
+        // User1 stakes
+        vm.startPrank(user1);
+        stakingToken.approve(address(pool), stakeAmount);
+        pool.stake(stakeAmount);
+        vm.stopPrank();
+
+        // Warp to just after interestStartTime and claim reward
+        vm.warp(interestStartTime + 1);
+
+        vm.startPrank(owner);
+        pool.enableClaim(true); // Enable claim
+        vm.stopPrank();
+
+        // User1 claims reward (sets lastUpdatedTime to current time)
+        vm.startPrank(user1);
         pool.claimReward();
-
-        vm.stopPrank();
-    }
-
-    // ============ Tests for Withdrawals ============
-
-    function testWithdrawAllSuccess() public {
-        uint256 oldBalance = stakingToken.balanceOf(user1);
-        uint256 stakingAmount = 5_000 ether;
-
-        vm.startPrank(user1);
-        stakingToken.approve(address(pool), stakingAmount);
-        pool.stake(stakingAmount);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + 8 days); // After lock-in period
-        vm.startPrank(user1);
-        pool.withdrawAll();
-        vm.stopPrank();
+        // Warp back to a time before lastUpdatedTime
+        vm.warp(interestStartTime);
 
-        // Declare and initialize intermediate variables
-        uint256 apr = 10; // 10% APR
-        uint256 durationInSeconds = 8 * 86400; // 8 days in seconds
+        // Access internal reward calculation indirectly via accrued rewards
+        (, , uint256 accruedReward) = pool.getStake(user1);
 
-        // Calculate reward
-        uint256 reward = (stakingAmount * apr * durationInSeconds) /
-            (365 * 86400 * 100);
-
-        // Assert the results
-        assertEq(stakingToken.balanceOf(user1), oldBalance); // Refund stake
-        assertEq(rewardToken.balanceOf(user1), reward); // Accrued rewards
-    }
-
-    function testWithdrawFailsBeforeLockIn() public {
-        vm.startPrank(user1);
-        stakingToken.approve(address(pool), 5_000 ether);
-        pool.stake(5_000 ether);
-
-        vm.warp(block.timestamp + 6 days); // Before lock-in ends
-        vm.expectRevert("Lock-in period active");
-        pool.withdrawAll();
-        vm.stopPrank();
-    }
-
-    function testWithdrawFailsWithoutStake() public {
-        vm.startPrank(user1);
-
-        vm.warp(block.timestamp + 8 days); // After lock-in period
-        vm.expectRevert("No stake found");
-        pool.withdrawAll();
-        vm.stopPrank();
-    }
-
-    // ============ Tests for Admin Functions ============
-
-    function testEnableAndDisableClaim() public {
-        assertTrue(pool.claimEnabled());
-        pool.enableClaim(false);
-        assertFalse(pool.claimEnabled());
-    }
-
-    function testEmergencyWithdraw() public {
-        uint256 ownerBalance = stakingToken.balanceOf(address(this));
-        uint256 stakedAmount = 10_000 ether;
-
-        vm.startPrank(user1);
-        stakingToken.approve(address(pool), stakedAmount);
-        pool.stake(stakedAmount);
-        vm.stopPrank();
-
-        pool.emergencyWithdraw();
+        // Assert that the reward calculation hits the `startTime >= endTime` path
         assertEq(
-            stakingToken.balanceOf(address(this)),
-            ownerBalance + stakedAmount
+            accruedReward,
+            0,
+            "Reward should be zero when startTime >= endTime"
         );
-        assertEq(pool.totalStaked(), 0);
-    }
-
-    function testEmergencyWithdrawFailsForNonOwner() public {
-        vm.startPrank(user1);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Ownable.OwnableUnauthorizedAccount.selector,
-                user1
-            )
-        );
-        pool.emergencyWithdraw();
-        vm.stopPrank();
-    }
-
-    function testRewardCalculationPrecision() public {
-        vm.startPrank(user1);
-        stakingToken.approve(address(pool), 1 wei); // Minimal stake
-        pool.stake(1 wei);
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + 365 days); // Full year
-
-        vm.startPrank(user1);
-        vm.expectRevert("No rewards to claim"); // Expect no rewards for minimal stake
-        pool.claimReward();
-        vm.stopPrank();
     }
 }

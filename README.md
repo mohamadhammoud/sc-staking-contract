@@ -289,4 +289,186 @@ console.log("Debug message", variable);
 
 ## Conclusion
 
-The Fixed Staking Pool provides a secure and efficient way for users to stake tokens and earn fixed APR rewards. Its features, including a lock-in period, reward claiming, and emergency withdrawal, make it suitable for diverse use cases in decentralized finance (DeFi) systems.
+The F
+
+# Fixed Staking Pool
+
+This repository implements a **Fixed Staking Pool** smart contract that allows users to stake tokens, earn rewards based on a fixed APR, and withdraw after a pool end time. The contract includes features like emergency withdrawal, reward claiming, and administrative controls.
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Features](#features)
+3. [Requirements](#requirements)
+4. [Installation](#installation)
+5. [Usage](#usage)
+   - [Deploying the Contract](#deploying-the-contract)
+   - [Interacting with the Contract](#interacting-with-the-contract)
+6. [Testing](#testing)
+   - [Running Tests](#running-tests)
+   - [Generating Coverage Reports](#generating-coverage-reports)
+7. [Scenarios](#scenarios)
+8. [Contribution](#contribution)
+9. [License](#license)
+
+---
+
+## Overview
+
+The **Fixed Staking Pool** is designed for scenarios where:
+
+1. Users stake tokens before an interest start time.
+2. Rewards are calculated based on a fixed APR from the interest start time to the pool end time.
+3. Users can withdraw their staked tokens and rewards after the pool ends.
+4. Administrators can enable or disable reward claims or perform emergency withdrawals if necessary.
+
+---
+
+## Features
+
+- **Fixed APR Rewards**: Rewards are calculated based on the fixed APR and the staking duration.
+- **Admin Controls**: Enable or disable claiming, perform emergency withdrawals, and manage pool parameters.
+- **Safety Checks**: Prevent staking after the interest start time or exceeding the max pool size.
+- **Event Logging**: Emits events for all significant actions (staking, withdrawals, claims, etc.).
+
+---
+
+## Requirements
+
+- **Node.js**: v16 or higher.
+- **Foundry**: Installed globally for testing and development.
+- **LCOV**: Installed for generating coverage reports.
+- **OpenZeppelin Contracts**: Used for utilities like `Ownable` and `ReentrancyGuard`.
+
+---
+
+## Installation
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/your-repo/fixed-staking-pool.git
+cd fixed-staking-pool
+forge install
+```
+
+---
+
+## Usage
+
+### Deploying the Contract
+
+To deploy the contract, use the provided script or your preferred method:
+
+1. **Deployment Parameters**:
+
+   - `_stakingToken`: Address of the staking token (ERC-20).
+   - `_rewardToken`: Address of the reward token (ERC-20).
+   - `_fixedAPR`: Fixed Annual Percentage Rate (e.g., 10 for 10%).
+   - `_interestStartTime`: UNIX timestamp when reward calculation starts.
+   - `_poolEndTime`: UNIX timestamp when the pool ends.
+   - `_maxPoolSize`: Maximum staking capacity.
+
+2. **Run Deployment**:
+   Update the deployment script `script/FixedStakingPool.s.sol` and run:
+
+   ```bash
+   forge script script/FixedStakingPool.s.sol --rpc-url <RPC_URL> --private-key <PRIVATE_KEY> --broadcast
+   ```
+
+   Example output:
+
+   ```
+   Staking Pool deployed at: 0xYourContractAddress
+   Staking Token deployed at: 0xYourStakingTokenAddress
+   Reward Token deployed at: 0xYourRewardTokenAddress
+   ```
+
+---
+
+## Testing
+
+### Running Tests
+
+Run tests with Foundry:
+
+```bash
+forge test
+```
+
+### Generating Coverage Reports
+
+To generate a visual coverage report:
+
+1. Run the coverage command:
+
+   ```bash
+   forge coverage --report lcov
+   ```
+
+2. Generate HTML:
+
+   ```bash
+   genhtml lcov.info --branch-coverage --output-dir coverage
+   ```
+
+3. Open the coverage report:
+   ```bash
+   open coverage/index.html
+   ```
+
+---
+
+## Scenarios
+
+### 1. Staking Before Interest Start
+
+- Users can stake tokens before the interest start time.
+- Example:
+  ```solidity
+  pool.stake(100_000 ether);
+  ```
+
+### 2. Rewards Calculation
+
+- Rewards accrue from the interest start time to the pool end time.
+- Formula:
+  ```text
+  reward = (stakedAmount * fixedAPR * duration) / (365 days * 100)
+  ```
+
+### 3. Claim Rewards
+
+- Rewards can be claimed after the claim is enabled:
+  ```solidity
+  pool.claimReward();
+  ```
+
+### 4. Withdraw Staked Tokens
+
+- After the pool end time, users can withdraw their stake and accrued rewards:
+  ```solidity
+  pool.withdrawAll();
+  ```
+
+### 5. Admin Emergency Withdraw
+
+- Admins can withdraw all tokens from the pool in emergencies:
+  ```solidity
+  pool.emergencyWithdraw();
+  ```
+
+---
+
+## Contribution
+
+We welcome contributions! Please fork the repository, create a branch, and submit a pull request.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+ixed Staking Pool provides a secure and efficient way for users to stake tokens and earn fixed APR rewards. Its features, including a lock-in period, reward claiming, and emergency withdrawal, make it suitable for diverse use cases in decentralized finance (DeFi) systems.
