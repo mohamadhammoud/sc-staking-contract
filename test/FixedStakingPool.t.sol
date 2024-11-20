@@ -39,7 +39,8 @@ contract FixedStakingPoolTest is Test {
             fixedAPR,
             interestStartTime,
             poolEndTime,
-            maxPoolSize
+            maxPoolSize,
+            address(this)
         );
 
         rewardToken.approve(address(pool), 1_000_000 ether);
@@ -485,7 +486,8 @@ contract FixedStakingPoolTest is Test {
             fixedAPR,
             validInterestStartTime,
             invalidPoolEndTime,
-            maxPoolSize
+            maxPoolSize,
+            owner
         );
     }
 
@@ -519,7 +521,8 @@ contract FixedStakingPoolTest is Test {
             fixedAPR,
             pastInterestStartTime,
             poolEndTime,
-            maxPoolSize
+            maxPoolSize,
+            owner
         );
     }
 

@@ -70,6 +70,7 @@ contract FixedStakingPool is Ownable, ReentrancyGuard {
      * @param _interestStartTime When interest calculation starts.
      * @param _poolEndTime When the pool ends.
      * @param _maxPoolSize Maximum pool staking capacity.
+     * @param _owner Contract owner.
      */
     constructor(
         IERC20 _stakingToken,
@@ -77,8 +78,9 @@ contract FixedStakingPool is Ownable, ReentrancyGuard {
         uint256 _fixedAPR,
         uint256 _interestStartTime,
         uint256 _poolEndTime,
-        uint256 _maxPoolSize
-    ) Ownable(msg.sender) {
+        uint256 _maxPoolSize,
+        address _owner
+    ) Ownable(_owner) {
         require(_interestStartTime > block.timestamp, "Start time in the past");
         require(
             _poolEndTime > _interestStartTime,

@@ -22,7 +22,8 @@ contract DeployFixedStakingPool is Script {
         uint256 fixedAPR = 10; // 10% APR
         uint256 interestStartTime = block.timestamp + 1 days; // Interest starts tomorrow
         uint256 poolEndTime = interestStartTime + 30 days; // Pool ends in 30 days
-        uint256 maxPoolSize = 1_000_000 ether; // Maximum staking pool size
+        uint256 maxPoolSize = 100_000 ether; // Maximum staking pool size
+        address owner = msg.sender; // Assign the deployer as the owner
 
         // Deploy FixedStakingPool
         FixedStakingPool pool = new FixedStakingPool(
@@ -31,7 +32,8 @@ contract DeployFixedStakingPool is Script {
             fixedAPR,
             interestStartTime,
             poolEndTime,
-            maxPoolSize
+            maxPoolSize,
+            owner
         );
 
         // Log deployed contract addresses
